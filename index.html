@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Collab Text Editor</title>
+  </head>
+  <body>
+    <h1>Collab Text Editor</h1>
+    <div id="username-container">
+      <form id="username-form">
+        <label for="username-input">Enter your username:</label>
+        <input type="text" id="username-input" required>
+        <button type="submit" id="submit-btn">Submit</button>
+        <div id="welcome-msg"></div>
+
+      </form>
+    </div>
+    
+    <div id="documents-container" style="display: none;">
+      <h2>Documents</h2>
+      <ul id="documents-list"></ul>
+      <button id="create-doc-btn">Create New Document</button>
+
+    </div>
+    
+    <div id="document-container" style="display: none;">
+      <div>
+        <button id="back-btn">Back</button>
+      </div>
+      <h2 id="document-title"></h2>
+      <p id="active-users"></p>
+      <textarea id="document-content"></textarea>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      let username = '';
+      let currentDocument = null;
+      let userlist = 'NULLL';
+      
+      const createDocBtn = document.getElementById('create-doc-btn');
+      createDocBtn.addEventListener('click', () => {
+        const documentId = prompt('Enter a name for the new document:');
+        const documentsList = document.getElementById('documents-list');
+        
+        // Check if the document name already exists in the list
+        const docExists = Array.from(documentsList.children).some((docItem) => {
+          return docItem.firstChild.innerText === documentId;
+        });
+        
+        if (!docExists) {
+          socket.emit('create', { documentId });
+        } else {
+          alert(`A document with the name "${documentId}" already exists.`);
+        }
+      });
+
+
+      const submitBtn = document.getElementById('submit-btn');
+      submitBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        username = document.getElementById('username-input').value;
+        socket.emit('username', { username });
+        document.getElementById('username-container').style.display = 'none';
+        document.getElementById('documents-container').style.display = 'block';
+        document.getElementById('welcome-msg').innerText = `Welcome ${username}!`;
+        
+      });
+
+
+      socket.on('documents', (documents) => {
+        console.log("getting documents");
+        const documentsList = document.getElementById('documents-list');
+        documentsList.innerHTML = '';
+        documents.forEach((doc) => {
+          const docItem = document.createElement('li');
+          const docLink = document.createElement('a');
+          docLink.href = '#';
+          docLink.innerText = doc.documentId;
+          docItem.appendChild(docLink);
+          documentsList.appendChild(docItem);
+
+          docLink.addEventListener('click',(event) => {
+            event.preventDefault();
+            socket.emit('join', { documentId: doc.documentId });
+            
+            currentDocument = doc.documentId;
+            document.getElementById('documents-container').style.display = 'none';
+            document.getElementById('document-container').style.display = 'block';
+            document.getElementById('document-title').innerText = `Editing document: ${doc.documentId}`;
+            
+          });
+        });
+      });
+      
+   
+
+      socket.on('update', async(change) => {
+        document.getElementById('document-content').value = change;
+      });
+
+      socket.on('active', async(users) => {
+        console.log(`got active on = ${users}`);
+        document.getElementById('active-users').innerText = `Active users: ${users}`;
+        userlist = users;
+      });
+
+    
+
+      const sendChange = (startIndex, deleteCount, newSubstring) => {
+        const change = { startIndex, deleteCount, newSubstring };
+        documentId = document.getElementById('document-title').value;
+        console.log(`emitting change: ${currentDocument} -> ${newSubstring} `);
+        socket.emit('message', ({currentDocument, newSubstring}));
+      };
+
+      const onDocumentContentChange = async() => {
+        console.log("change made");
+        const textarea = document.getElementById('document-content');
+        const startIndex = textarea.selectionStart;
+        const endIndex = textarea.selectionEnd;
+        const deleteCount = endIndex - startIndex;
+        const newSubstring = textarea.value;
+        console.log(startIndex, endIndex, newSubstring);
+        sendChange(startIndex, deleteCount, newSubstring);
+      };
+
+      document.getElementById('document-content').addEventListener('input', onDocumentContentChange);
+      const backBtn = document.getElementById('back-btn');
+      backBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        document.getElementById('document-container').style.display = 'none';
+        document.getElementById('documents-container').style.display = 'block';
+        socket.emit('leave', { documentId: currentDocument });
+        console.log(`I'm leaving from ${currentDocument}`);
+        // document.getElementById('active-users').innerText = `Active users: ${userlist}`;
+
+        currentDocument = null;
+        document.getElementById('document-content').value = '';
+      });
+
+      
+    </script>
+  </body>
+</html>
